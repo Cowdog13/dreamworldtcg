@@ -25,6 +25,18 @@ interface FilterState {
   rarity: string;
   minCost: string;
   maxCost: string;
+  minAttack: string;
+  maxAttack: string;
+  minDefense: string;
+  maxDefense: string;
+  minMind: string;
+  maxMind: string;
+  minSkill: string;
+  maxSkill: string;
+  minInitiative: string;
+  maxInitiative: string;
+  minBacklash: string;
+  maxBacklash: string;
 }
 
 const CardBrowser: React.FC<CardBrowserProps> = ({ onSelectCard, onBack }) => {
@@ -39,6 +51,18 @@ const CardBrowser: React.FC<CardBrowserProps> = ({ onSelectCard, onBack }) => {
     rarity: '',
     minCost: '',
     maxCost: '',
+    minAttack: '',
+    maxAttack: '',
+    minDefense: '',
+    maxDefense: '',
+    minMind: '',
+    maxMind: '',
+    minSkill: '',
+    maxSkill: '',
+    minInitiative: '',
+    maxInitiative: '',
+    minBacklash: '',
+    maxBacklash: '',
   });
 
   // Available filter options
@@ -72,21 +96,82 @@ const CardBrowser: React.FC<CardBrowserProps> = ({ onSelectCard, onBack }) => {
     
     if (filters.name) searchCriteria.name = filters.name;
     if (filters.faction) searchCriteria.faction = filters.faction;
-    if (filters.type) {
-      if (filters.type === 'Dreamseeker') {
-        // Special filter for Dreamseekers
-        const filtered = cardDatabase.searchCards(searchCriteria).filter(card => isDreamseeker(card));
-        setFilteredCards(filtered);
-        return;
-      } else {
-        searchCriteria.type = filters.type;
-      }
-    }
     if (filters.rarity) searchCriteria.rarity = filters.rarity;
     if (filters.minCost) searchCriteria.minCost = parseInt(filters.minCost);
     if (filters.maxCost) searchCriteria.maxCost = parseInt(filters.maxCost);
+    
+    // Start with cards matching basic criteria
+    let filtered = cardDatabase.searchCards(searchCriteria);
+    
+    // Handle type filtering
+    if (filters.type) {
+      if (filters.type === 'Dreamseeker') {
+        filtered = filtered.filter(card => isDreamseeker(card));
+      } else {
+        filtered = filtered.filter(card => card.Type === filters.type);
+      }
+    }
+    
+    // Attack filters
+    if (filters.minAttack) {
+      const minAttack = parseInt(filters.minAttack);
+      filtered = filtered.filter(card => card.AttackStat >= minAttack);
+    }
+    if (filters.maxAttack) {
+      const maxAttack = parseInt(filters.maxAttack);
+      filtered = filtered.filter(card => card.AttackStat <= maxAttack);
+    }
+    
+    // Defense filters
+    if (filters.minDefense) {
+      const minDefense = parseInt(filters.minDefense);
+      filtered = filtered.filter(card => card.DefenseStat >= minDefense);
+    }
+    if (filters.maxDefense) {
+      const maxDefense = parseInt(filters.maxDefense);
+      filtered = filtered.filter(card => card.DefenseStat <= maxDefense);
+    }
+    
+    // Mind (Mentality) filters
+    if (filters.minMind) {
+      const minMind = parseInt(filters.minMind);
+      filtered = filtered.filter(card => card.MindStat >= minMind);
+    }
+    if (filters.maxMind) {
+      const maxMind = parseInt(filters.maxMind);
+      filtered = filtered.filter(card => card.MindStat <= maxMind);
+    }
+    
+    // Skill (Tenacity) filters
+    if (filters.minSkill) {
+      const minSkill = parseInt(filters.minSkill);
+      filtered = filtered.filter(card => card.SkillStat >= minSkill);
+    }
+    if (filters.maxSkill) {
+      const maxSkill = parseInt(filters.maxSkill);
+      filtered = filtered.filter(card => card.SkillStat <= maxSkill);
+    }
+    
+    // Initiative filters
+    if (filters.minInitiative) {
+      const minInitiative = parseInt(filters.minInitiative);
+      filtered = filtered.filter(card => parseInt(card.Initiative || '0') >= minInitiative);
+    }
+    if (filters.maxInitiative) {
+      const maxInitiative = parseInt(filters.maxInitiative);
+      filtered = filtered.filter(card => parseInt(card.Initiative || '0') <= maxInitiative);
+    }
+    
+    // Backlash filters
+    if (filters.minBacklash) {
+      const minBacklash = parseInt(filters.minBacklash);
+      filtered = filtered.filter(card => parseInt(card.Backlash || '0') >= minBacklash);
+    }
+    if (filters.maxBacklash) {
+      const maxBacklash = parseInt(filters.maxBacklash);
+      filtered = filtered.filter(card => parseInt(card.Backlash || '0') <= maxBacklash);
+    }
 
-    const filtered = cardDatabase.searchCards(searchCriteria);
     setFilteredCards(filtered);
   };
 
@@ -98,6 +183,18 @@ const CardBrowser: React.FC<CardBrowserProps> = ({ onSelectCard, onBack }) => {
       rarity: '',
       minCost: '',
       maxCost: '',
+      minAttack: '',
+      maxAttack: '',
+      minDefense: '',
+      maxDefense: '',
+      minMind: '',
+      maxMind: '',
+      minSkill: '',
+      maxSkill: '',
+      minInitiative: '',
+      maxInitiative: '',
+      minBacklash: '',
+      maxBacklash: '',
     });
   };
 
@@ -127,6 +224,10 @@ const CardBrowser: React.FC<CardBrowserProps> = ({ onSelectCard, onBack }) => {
           <Text style={styles.statText}>Cost: {item.Cost}</Text>
           {item.AttackStat > 0 && <Text style={styles.statText}>ATK: {item.AttackStat}</Text>}
           {item.DefenseStat > 0 && <Text style={styles.statText}>DEF: {item.DefenseStat}</Text>}
+          {item.MindStat > 0 && <Text style={styles.statText}>Mind: {item.MindStat}</Text>}
+          {item.SkillStat > 0 && <Text style={styles.statText}>Skill: {item.SkillStat}</Text>}
+          {item.Initiative && <Text style={styles.statText}>Init: {item.Initiative}</Text>}
+          {item.Backlash && <Text style={styles.statText}>Back: {item.Backlash}</Text>}
         </View>
       </View>
       {onSelectCard && (
@@ -352,6 +453,120 @@ const CardBrowser: React.FC<CardBrowserProps> = ({ onSelectCard, onBack }) => {
                   placeholder="Max cost"
                   value={filters.maxCost}
                   onChangeText={(text) => setFilters({...filters, maxCost: text})}
+                  keyboardType="numeric"
+                />
+              </View>
+
+              {/* Attack Filter */}
+              <View style={styles.costFilter}>
+                <TextInput
+                  style={[styles.filterInput, styles.costInput]}
+                  placeholder="Min attack"
+                  value={filters.minAttack}
+                  onChangeText={(text) => setFilters({...filters, minAttack: text})}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.costSeparator}>to</Text>
+                <TextInput
+                  style={[styles.filterInput, styles.costInput]}
+                  placeholder="Max attack"
+                  value={filters.maxAttack}
+                  onChangeText={(text) => setFilters({...filters, maxAttack: text})}
+                  keyboardType="numeric"
+                />
+              </View>
+
+              {/* Defense Filter */}
+              <View style={styles.costFilter}>
+                <TextInput
+                  style={[styles.filterInput, styles.costInput]}
+                  placeholder="Min defense"
+                  value={filters.minDefense}
+                  onChangeText={(text) => setFilters({...filters, minDefense: text})}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.costSeparator}>to</Text>
+                <TextInput
+                  style={[styles.filterInput, styles.costInput]}
+                  placeholder="Max defense"
+                  value={filters.maxDefense}
+                  onChangeText={(text) => setFilters({...filters, maxDefense: text})}
+                  keyboardType="numeric"
+                />
+              </View>
+
+              {/* Mind (Mentality) Filter */}
+              <View style={styles.costFilter}>
+                <TextInput
+                  style={[styles.filterInput, styles.costInput]}
+                  placeholder="Min mentality"
+                  value={filters.minMind}
+                  onChangeText={(text) => setFilters({...filters, minMind: text})}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.costSeparator}>to</Text>
+                <TextInput
+                  style={[styles.filterInput, styles.costInput]}
+                  placeholder="Max mentality"
+                  value={filters.maxMind}
+                  onChangeText={(text) => setFilters({...filters, maxMind: text})}
+                  keyboardType="numeric"
+                />
+              </View>
+
+              {/* Skill (Tenacity) Filter */}
+              <View style={styles.costFilter}>
+                <TextInput
+                  style={[styles.filterInput, styles.costInput]}
+                  placeholder="Min tenacity"
+                  value={filters.minSkill}
+                  onChangeText={(text) => setFilters({...filters, minSkill: text})}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.costSeparator}>to</Text>
+                <TextInput
+                  style={[styles.filterInput, styles.costInput]}
+                  placeholder="Max tenacity"
+                  value={filters.maxSkill}
+                  onChangeText={(text) => setFilters({...filters, maxSkill: text})}
+                  keyboardType="numeric"
+                />
+              </View>
+
+              {/* Initiative Filter */}
+              <View style={styles.costFilter}>
+                <TextInput
+                  style={[styles.filterInput, styles.costInput]}
+                  placeholder="Min initiative"
+                  value={filters.minInitiative}
+                  onChangeText={(text) => setFilters({...filters, minInitiative: text})}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.costSeparator}>to</Text>
+                <TextInput
+                  style={[styles.filterInput, styles.costInput]}
+                  placeholder="Max initiative"
+                  value={filters.maxInitiative}
+                  onChangeText={(text) => setFilters({...filters, maxInitiative: text})}
+                  keyboardType="numeric"
+                />
+              </View>
+
+              {/* Backlash Filter */}
+              <View style={styles.costFilter}>
+                <TextInput
+                  style={[styles.filterInput, styles.costInput]}
+                  placeholder="Min backlash"
+                  value={filters.minBacklash}
+                  onChangeText={(text) => setFilters({...filters, minBacklash: text})}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.costSeparator}>to</Text>
+                <TextInput
+                  style={[styles.filterInput, styles.costInput]}
+                  placeholder="Max backlash"
+                  value={filters.maxBacklash}
+                  onChangeText={(text) => setFilters({...filters, maxBacklash: text})}
                   keyboardType="numeric"
                 />
               </View>
