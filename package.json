@@ -7,8 +7,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "build:web": "expo export:web",
-    "predeploy": "npm run build:web",
+    "build:web": "set NODE_ENV=production && expo export --platform web",
+    "predeploy": "npm run build:web && node fix-paths.js",
     "deploy": "gh-pages -d dist"
   },
   "homepage": "https://Cowdog13.github.io/dreamworldtcg",
