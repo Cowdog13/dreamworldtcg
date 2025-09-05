@@ -1,0 +1,17 @@
+Instructions for updating Firebase configuration:
+
+1. Copy your Firebase config from the Firebase Console
+2. Replace the placeholder config in src/services/firebase.ts
+
+Your config should look like:
+
+const firebaseConfig = {
+  apiKey: "your-api-key-here",
+  authDomain: "your-project.firebaseapp.com", 
+  projectId: "your-project-id",
+  storageBucket: "your-project.appspot.com",
+  messagingSenderId: "123456789",
+  appId: "your-app-id"
+};
+
+Replace the placeholder values in src/services/firebase.ts with your actual values from the Firebase Console.
