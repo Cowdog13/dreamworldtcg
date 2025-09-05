@@ -10,7 +10,7 @@ let dreamseekerMatches: DreamseekerMatch[] = [];
 // Load Dreamseeker-Base matches from the matches file
 export const loadDreamseekerMatches = async (): Promise<void> => {
   try {
-    const response = await fetch('/matches');
+    const response = await fetch('./matches');
     const matchesText = await response.text();
     
     dreamseekerMatches = matchesText

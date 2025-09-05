@@ -290,7 +290,7 @@ const parseCSVData = (csvText: string): Card[] => {
       Rarity: cardData.Legendary === "Yes" ? "Legendary" : "Common",
       MaxCopiesInDeck: cardData.Legendary === "Yes" ? 1 : 3,
       Flavortext: "",
-      imageUrl: `/cards/${sanitizedName}.png`
+      imageUrl: `./cards/${sanitizedName}.png`
     };
     
     cards.push(card);
@@ -303,7 +303,7 @@ const parseCSVData = (csvText: string): Card[] => {
 export const initializeCardDatabase = async () => {
   try {
     // Load CSV data
-    const response = await fetch('/CardList.csv');
+    const response = await fetch('./CardList.csv');
     const csvText = await response.text();
     const parsedCards = parseCSVData(csvText);
     
