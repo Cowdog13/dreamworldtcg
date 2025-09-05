@@ -554,7 +554,7 @@ const GameTracker: React.FC<GameTrackerProps> = ({ user, onSignOut }) => {
             <Text style={styles.signOutText}>Sign Out</Text>
           </TouchableOpacity>
         </View>
-        <HistoryScreen currentUser={user.email} />
+        <HistoryScreen currentUser={user.uid || user.email} />
       </View>
     );
   }

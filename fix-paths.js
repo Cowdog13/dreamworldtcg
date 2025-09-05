@@ -12,4 +12,8 @@ indexContent = indexContent.replace(/src="\/_expo/g, 'src="./_expo');
 // Write the fixed content back
 fs.writeFileSync(indexPath, indexContent);
 
-console.log('Fixed paths in index.html for GitHub Pages');
+// Create .nojekyll file to prevent Jekyll processing
+const nojekyllPath = path.join(__dirname, 'dist', '.nojekyll');
+fs.writeFileSync(nojekyllPath, '');
+
+console.log('Fixed paths in index.html and added .nojekyll for GitHub Pages');
