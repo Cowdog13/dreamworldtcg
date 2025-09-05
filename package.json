@@ -11,7 +11,7 @@
     "predeploy": "npm run build:web",
     "deploy": "gh-pages -d dist"
   },
-  "homepage": "https://cowdo.github.io/dreamworldtcg",
+  "homepage": "https://Cowdog13.github.io/dreamworldtcg",
   "dependencies": {
     "@expo/metro-runtime": "~5.0.4",
     "@react-native-community/masked-view": "^0.1.11",
