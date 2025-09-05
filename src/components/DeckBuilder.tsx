@@ -84,12 +84,16 @@ const DeckBuilder: React.FC<DeckBuilderProps> = ({ onBack, existingDeck }) => {
     maxDefense: '',
     minCost: '',
     maxCost: '',
+    minMind: '',
+    maxMind: '',
+    minSkill: '',
+    maxSkill: '',
     minInitiative: '',
     maxInitiative: '',
     minBacklash: '',
     maxBacklash: '',
     hasAbility: '',
-    statType: 'all' // all, attack, defense, cost, mentality, etc
+    statType: 'all' // all, attack, defense, cost, mentality, tenacity, etc
   });
 
   useEffect(() => {
@@ -174,6 +178,26 @@ const DeckBuilder: React.FC<DeckBuilderProps> = ({ onBack, existingDeck }) => {
     if (advancedFilters.maxBacklash) {
       const maxBacklash = parseInt(advancedFilters.maxBacklash);
       filtered = filtered.filter(card => parseInt(card.Backlash || '0') <= maxBacklash);
+    }
+    
+    if (advancedFilters.minMind) {
+      const minMind = parseInt(advancedFilters.minMind);
+      filtered = filtered.filter(card => card.MindStat >= minMind);
+    }
+    
+    if (advancedFilters.maxMind) {
+      const maxMind = parseInt(advancedFilters.maxMind);
+      filtered = filtered.filter(card => card.MindStat <= maxMind);
+    }
+    
+    if (advancedFilters.minSkill) {
+      const minSkill = parseInt(advancedFilters.minSkill);
+      filtered = filtered.filter(card => card.SkillStat >= minSkill);
+    }
+    
+    if (advancedFilters.maxSkill) {
+      const maxSkill = parseInt(advancedFilters.maxSkill);
+      filtered = filtered.filter(card => card.SkillStat <= maxSkill);
     }
     
     if (advancedFilters.hasAbility) {
@@ -913,6 +937,40 @@ const DeckBuilder: React.FC<DeckBuilderProps> = ({ onBack, existingDeck }) => {
                   />
                 </View>
 
+                <View style={styles.advancedRow}>
+                  <TextInput
+                    style={styles.advancedInput}
+                    placeholder="Min Mentality"
+                    value={advancedFilters.minMind}
+                    onChangeText={(text) => setAdvancedFilters({...advancedFilters, minMind: text})}
+                    keyboardType="numeric"
+                  />
+                  <TextInput
+                    style={styles.advancedInput}
+                    placeholder="Max Mentality"
+                    value={advancedFilters.maxMind}
+                    onChangeText={(text) => setAdvancedFilters({...advancedFilters, maxMind: text})}
+                    keyboardType="numeric"
+                  />
+                </View>
+
+                <View style={styles.advancedRow}>
+                  <TextInput
+                    style={styles.advancedInput}
+                    placeholder="Min Tenacity"
+                    value={advancedFilters.minSkill}
+                    onChangeText={(text) => setAdvancedFilters({...advancedFilters, minSkill: text})}
+                    keyboardType="numeric"
+                  />
+                  <TextInput
+                    style={styles.advancedInput}
+                    placeholder="Max Tenacity"
+                    value={advancedFilters.maxSkill}
+                    onChangeText={(text) => setAdvancedFilters({...advancedFilters, maxSkill: text})}
+                    keyboardType="numeric"
+                  />
+                </View>
+
                 <TextInput
                   style={styles.abilitySearchInput}
                   placeholder="Search abilities/effects..."
@@ -924,7 +982,8 @@ const DeckBuilder: React.FC<DeckBuilderProps> = ({ onBack, existingDeck }) => {
                   style={styles.clearFiltersButton}
                   onPress={() => setAdvancedFilters({
                     minAttack: '', maxAttack: '', minDefense: '', maxDefense: '',
-                    minCost: '', maxCost: '', minInitiative: '', maxInitiative: '',
+                    minCost: '', maxCost: '', minMind: '', maxMind: '',
+                    minSkill: '', maxSkill: '', minInitiative: '', maxInitiative: '',
                     minBacklash: '', maxBacklash: '', hasAbility: '', statType: 'all'
                   })}
                 >
