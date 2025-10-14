@@ -41,6 +41,7 @@ interface Deck {
 interface DeckBuilderProps {
   onBack: () => void;
   existingDeck?: Deck;
+  userId?: string;
 }
 
 const DECK_RULES = {
@@ -51,7 +52,7 @@ const DECK_RULES = {
   sideboard: { min: 0, max: 8 },
 };
 
-const DeckBuilder: React.FC<DeckBuilderProps> = ({ onBack, existingDeck }) => {
+const DeckBuilder: React.FC<DeckBuilderProps> = ({ onBack, existingDeck, userId }) => {
   const [deck, setDeck] = useState<Deck>({
     id: existingDeck?.id || Date.now().toString(),
     name: existingDeck?.name || 'New Deck',
@@ -596,32 +597,44 @@ const DeckBuilder: React.FC<DeckBuilderProps> = ({ onBack, existingDeck }) => {
     return { valid: errors.length === 0, errors };
   };
 
-  const saveDeck = () => {
+  const saveDeck = async () => {
     const { valid, errors } = validateDeck();
-    
+
     if (!valid) {
-      window.alert('Invalid Deck', 'Please fix these issues:\n\n' + errors.join('\n'));
+      window.alert('Please fix these issues:\n\n' + errors.join('\n'));
       return;
     }
-    
+
     const updatedDeck = { ...deck, name: deckName };
-    
+
     try {
+      // Save to localStorage as backup
       const savedDecks = JSON.parse(localStorage.getItem('dreamworld_decks') || '[]');
       const existingIndex = savedDecks.findIndex((d: Deck) => d.id === updatedDeck.id);
-      
+
       if (existingIndex >= 0) {
         savedDecks[existingIndex] = updatedDeck;
       } else {
         savedDecks.push(updatedDeck);
       }
-      
+
       localStorage.setItem('dreamworld_decks', JSON.stringify(savedDecks));
+
+      // Save to Firebase
+      if (userId) {
+        const { saveUserDecks } = await import('../services/firebaseData');
+        const saveResult = await saveUserDecks(userId, savedDecks);
+        if (!saveResult) {
+          console.warn('Failed to save to Firebase, but saved to localStorage');
+        }
+      }
+
       setDeck(updatedDeck);
       setShowSaveModal(false);
-      window.alert('Success', `Deck "${deckName}" has been saved!`);
+      window.alert(`Deck "${deckName}" has been saved!`);
     } catch (error) {
-      window.alert('Failed to save deck.');
+      console.error('Failed to save deck:', error);
+      window.alert('Failed to save deck. Please try again.');
     }
   };
 

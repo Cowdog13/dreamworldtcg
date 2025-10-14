@@ -115,36 +115,73 @@ export const getUserMatches = async (userId: string): Promise<any[]> => {
 // Real-time Game State Operations
 export const createGame = async (gameCode: string, gameState: any) => {
   try {
+    console.log('createGame called with gameCode:', gameCode);
     const fb = await getFirebase();
-    if (!fb) throw new Error('Firebase not initialized');
-    
+    if (!fb) {
+      console.error('Firebase not initialized in createGame');
+      throw new Error('Firebase not initialized');
+    }
+
+    console.log('Creating game document with gameCode:', gameCode);
     const gameDocRef = fb.doc(fb.db, 'games', gameCode);
-    await fb.setDoc(gameDocRef, {
+
+    // Ensure startedAt is serialized properly
+    const gameData = {
       ...gameState,
+      startedAt: gameState.startedAt instanceof Date ? gameState.startedAt.toISOString() : gameState.startedAt,
       lastUpdated: fb.serverTimestamp()
-    });
-    
+    };
+
+    console.log('Writing game data to Firestore:', gameData);
+    await fb.setDoc(gameDocRef, gameData);
+    console.log('Game created successfully');
+
     return true;
   } catch (error) {
     console.error('Error creating game:', error);
+    console.error('Error details:', error);
     return false;
   }
 };
 
 export const updateGame = async (gameCode: string, gameState: any) => {
   try {
+    console.log('updateGame called with gameCode:', gameCode);
     const fb = await getFirebase();
-    if (!fb) throw new Error('Firebase not initialized');
-    
+    if (!fb) {
+      console.error('Firebase not initialized in updateGame');
+      throw new Error('Firebase not initialized');
+    }
+
     const gameDocRef = fb.doc(fb.db, 'games', gameCode);
-    await fb.updateDoc(gameDocRef, {
+
+    // Ensure dates are serialized properly and remove undefined values
+    const gameData: any = {
       ...gameState,
+      startedAt: gameState.startedAt instanceof Date ? gameState.startedAt.toISOString() : gameState.startedAt,
       lastUpdated: fb.serverTimestamp()
+    };
+
+    // Only include endedAt if it's defined
+    if (gameState.endedAt) {
+      gameData.endedAt = gameState.endedAt instanceof Date ? gameState.endedAt.toISOString() : gameState.endedAt;
+    }
+
+    // Remove any undefined values from the data
+    Object.keys(gameData).forEach(key => {
+      if (gameData[key] === undefined) {
+        delete gameData[key];
+      }
     });
-    
+
+    console.log('Updating game data in Firestore');
+    await fb.setDoc(gameDocRef, gameData, { merge: true });
+    console.log('Game updated successfully');
+
     return true;
   } catch (error) {
     console.error('Error updating game:', error);
+    console.error('Error details:', error);
     return false;
   }
 };
@@ -166,10 +203,19 @@ export const getGame = async (gameCode: string): Promise<any | null> => {
     if (docSnap.exists()) {
       const data = docSnap.data();
       console.log('Game data retrieved:', data);
+
+      // Handle different date formats (Firestore Timestamp or ISO string)
+      const parseDate = (dateField: any) => {
+        if (!dateField) return new Date();
+        if (typeof dateField === 'string') return new Date(dateField);
+        if (dateField.toDate && typeof dateField.toDate === 'function') return dateField.toDate();
+        return new Date();
+      };
+
       return {
         ...data,
-        startedAt: data.startedAt?.toDate() || new Date(data.startedAt),
-        lastUpdated: data.lastUpdated?.toDate() || new Date()
+        startedAt: parseDate(data.startedAt),
+        lastUpdated: parseDate(data.lastUpdated)
       };
     }
     console.log('No document found for game code:', gameCode);
@@ -185,23 +231,31 @@ export const subscribeToGame = async (gameCode: string, callback: (gameState: an
   try {
     const fb = await getFirebase();
     if (!fb) throw new Error('Firebase not initialized');
-    
+
+    // Helper to parse dates
+    const parseDate = (dateField: any) => {
+      if (!dateField) return new Date();
+      if (typeof dateField === 'string') return new Date(dateField);
+      if (dateField.toDate && typeof dateField.toDate === 'function') return dateField.toDate();
+      return new Date();
+    };
+
     const gameDocRef = fb.doc(fb.db, 'games', gameCode);
-    
+
     const unsubscribe = fb.onSnapshot(gameDocRef, (doc: any) => {
       if (doc.exists()) {
         const data = doc.data();
         const gameState = {
           ...data,
-          startedAt: data.startedAt?.toDate() || new Date(data.startedAt),
-          lastUpdated: data.lastUpdated?.toDate() || new Date()
+          startedAt: parseDate(data.startedAt),
+          lastUpdated: parseDate(data.lastUpdated)
         };
         callback(gameState);
       } else {
         callback(null);
       }
     });
-    
+
     return unsubscribe;
   } catch (error) {
     console.error('Error subscribing to game:', error);

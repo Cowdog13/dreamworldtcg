@@ -39,6 +39,9 @@ interface PlayerState {
   maxEnergyThisTurn: number;
   isHost: boolean;
   deckUsed?: string;
+  disconnected?: boolean;
+  lastDisconnect?: Date;
+  lastReconnect?: Date;
 }
 
 interface RoundResult {
@@ -55,9 +58,10 @@ interface MatchResult {
   players: { [playerId: string]: { name: string; deckUsed?: string } };
   rounds: RoundResult[];
   winner: string;
-  winType: 'normal' | 'surrender';
+  winType: 'normal' | 'surrender' | 'incomplete';
   startedAt: Date;
   endedAt: Date;
+  incomplete?: boolean;
 }
 
 interface GameState {
@@ -70,6 +74,7 @@ interface GameState {
   gameCode?: string;
   rounds: RoundResult[];
   startedAt?: Date;
+  incomplete?: boolean;
 }
 
 const GameTracker: React.FC<GameTrackerProps> = ({ user, onSignOut }) => {
@@ -86,6 +91,14 @@ const GameTracker: React.FC<GameTrackerProps> = ({ user, onSignOut }) => {
   const [selectedDeck, setSelectedDeck] = useState<any>(null);
   const [availableDecks, setAvailableDecks] = useState<any[]>([]);
   const [gameSubscription, setGameSubscription] = useState<any>(null);
+  const [showLocalGame, setShowLocalGame] = useState(false);
+  const [player2Email, setPlayer2Email] = useState('');
+  const [player2Password, setPlayer2Password] = useState('');
+  const [player2Deck, setPlayer2Deck] = useState<any>(null);
+  const [player2Decks, setPlayer2Decks] = useState<any[]>([]);
+  const [player2UserId, setPlayer2UserId] = useState<string | null>(null);
+  const [isLocalMode, setIsLocalMode] = useState(false);
+  const [isLoadingPlayer2, setIsLoadingPlayer2] = useState(false);
 
   const userId = user.uid || user.email;
 
@@ -182,7 +195,15 @@ const GameTracker: React.FC<GameTrackerProps> = ({ user, onSignOut }) => {
     };
 
     // Store game in Firebase
-    await createFirebaseGame(code, newGame);
+    console.log('Creating game with code:', code);
+    const result = await createFirebaseGame(code, newGame);
+    console.log('Create game result:', result);
+
+    if (!result) {
+      window.alert('Failed to create game. Please try again.');
+      return;
+    }
+
     setGameState(newGame);
     setShowCreateGame(false);
     setSelectedDeck(null);
@@ -210,7 +231,17 @@ const GameTracker: React.FC<GameTrackerProps> = ({ user, onSignOut }) => {
       }
       
       if (existingGame.players[userId]) {
-        window.alert('You are already in this game.');
+        // If user is already in the game, mark them as reconnected and load the game
+        console.log('User already in game, reconnecting...');
+        existingGame.players[userId].disconnected = false;
+        existingGame.players[userId].lastReconnect = new Date();
+
+        await updateFirebaseGame(code, existingGame);
+        setGameState(existingGame);
+        setShowJoinGame(false);
+        setGameCode('');
+        setSelectedDeck(null);
+        window.alert('Reconnected to game!');
         return;
       }
       
@@ -244,9 +275,15 @@ const GameTracker: React.FC<GameTrackerProps> = ({ user, onSignOut }) => {
     };
 
     console.log('Joined game:', joinedGame);
-    
-      // Update Firebase
-      await updateFirebaseGame(code, joinedGame);
+
+      // Update Firebase first
+      const updateResult = await updateFirebaseGame(code, joinedGame);
+      if (!updateResult) {
+        window.alert('Failed to update game. Please try again.');
+        return;
+      }
+
+      // Then set local state
       setGameState(joinedGame);
       setShowJoinGame(false);
       setGameCode('');
@@ -257,14 +294,153 @@ const GameTracker: React.FC<GameTrackerProps> = ({ user, onSignOut }) => {
     }
   };
 
+  const authenticatePlayer2 = async () => {
+    if (!player2Email.trim() || player2Email.trim().toLowerCase() === 'guest' || !player2Password) {
+      return;
+    }
+
+    setIsLoadingPlayer2(true);
+    try {
+      // Create a separate Firebase app instance for Player 2
+      const { initializeApp, getApps } = await import('firebase/app');
+      const { getAuth, signInWithEmailAndPassword, signOut } = await import('firebase/auth');
+      const { getFirestore, collection, doc, getDoc } = await import('firebase/firestore');
+
+      // Use the same config as the main app
+      const firebaseConfig = {
+        apiKey: "AIzaSyClWleR1ryIHyj7WFPgmE7hCRMTGbwx7KU",
+        authDomain: "dreamworldtcg.firebaseapp.com",
+        projectId: "dreamworldtcg",
+        storageBucket: "dreamworldtcg.firebasestorage.app",
+        messagingSenderId: "662480346599",
+        appId: "1:662480346599:web:f89d4fab16b8bfefccc8f6"
+      };
+
+      // Create a secondary app for Player 2
+      let player2App;
+      const existingApp = getApps().find(app => app.name === 'player2');
+      if (existingApp) {
+        player2App = existingApp;
+      } else {
+        player2App = initializeApp(firebaseConfig, 'player2');
+      }
+
+      const player2Auth = getAuth(player2App);
+      const player2Db = getFirestore(player2App);
+
+      // Sign in Player 2
+      const userCredential = await signInWithEmailAndPassword(
+        player2Auth,
+        player2Email.trim(),
+        player2Password
+      );
+
+      const p2Id = userCredential.user.uid;
+      const p2DisplayName = userCredential.user.displayName || userCredential.user.email || player2Email.trim();
+
+      setPlayer2UserId(p2Id);
+
+      // Load Player 2's decks using the secondary app's Firestore
+      const userDocRef = doc(player2Db, 'users', p2Id);
+      const docSnap = await getDoc(userDocRef);
+
+      let decks = [];
+      if (docSnap.exists()) {
+        decks = docSnap.data().decks || [];
+        // Convert date strings back to Date objects
+        decks = decks.map((deck: any) => ({
+          ...deck,
+          createdAt: deck.createdAt?.toDate ? deck.createdAt.toDate() : new Date(deck.createdAt),
+          lastModified: deck.lastModified?.toDate ? deck.lastModified.toDate() : new Date(deck.lastModified)
+        }));
+      }
+
+      setPlayer2Decks(decks);
+      // Store display name in email field to use in game
+      setPlayer2Email(p2DisplayName);
+
+      // Sign out from the secondary app
+      await signOut(player2Auth);
+
+      window.alert('Player 2 authenticated! Select their deck below.');
+    } catch (error: any) {
+      console.error('Player 2 authentication failed:', error);
+      window.alert(`Authentication failed: ${error.message}\n\nYou can continue as guest by clearing the password field.`);
+    } finally {
+      setIsLoadingPlayer2(false);
+    }
+  };
+
+  const startLocalGame = async () => {
+    let player2Id = 'guest';
+    let player2Name = 'Guest Player';
+    let player2DeckToUse = player2Deck;
+
+    // If player 2 authenticated, use their user ID
+    if (player2UserId) {
+      player2Id = player2UserId;
+      player2Name = player2Email.trim();
+    } else if (player2Email.trim() && player2Email.trim().toLowerCase() !== 'guest') {
+      // Use a unique ID based on their email/name for match history
+      player2Id = 'local_' + btoa(player2Email.trim()).substring(0, 16);
+      player2Name = player2Email.trim();
+    }
+
+    // Create local game
+    const player1: PlayerState = {
+      id: userId,
+      name: user.displayName || user.email || 'Player 1',
+      morale: 50,
+      energy: 0,
+      maxEnergyThisTurn: 0,
+      isHost: true,
+      deckUsed: selectedDeck?.name || 'No Deck Selected',
+    };
+
+    const player2: PlayerState = {
+      id: player2Id,
+      name: player2Name,
+      morale: 50,
+      energy: 0,
+      maxEnergyThisTurn: 0,
+      isHost: false,
+      deckUsed: player2DeckToUse?.name || 'No Deck Selected',
+    };
+
+    // Random first player
+    const players = [userId, player2Id];
+    const firstPlayer = players[Math.floor(Math.random() * players.length)];
+
+    const newGame: GameState = {
+      players: { [userId]: player1, [player2Id]: player2 },
+      currentTurn: 1,
+      currentRound: 1,
+      priorityPlayerId: firstPlayer,
+      gameStatus: 'active',
+      gameCode: 'LOCAL-' + Date.now(),
+      rounds: [],
+      startedAt: new Date(),
+    };
+
+    setGameState(newGame);
+    setIsLocalMode(true);
+    setShowLocalGame(false);
+    setPlayer2Email('');
+    setPlayer2Password('');
+    setPlayer2Deck(null);
+    setPlayer2Decks([]);
+    setPlayer2UserId(null);
+    setSelectedDeck(null);
+  };
+
   const adjustValue = async (playerId: string, type: 'morale' | 'energy', amount: number) => {
     if (!gameState) return;
 
     const updateGameState = async (updatedGame: GameState) => {
       // Update local state
       setGameState(updatedGame);
-      // Update Firebase for real-time synchronization
-      if (updatedGame.gameCode) {
+      // Update Firebase for real-time synchronization (only if not local mode)
+      if (updatedGame.gameCode && !isLocalMode) {
         await updateFirebaseGame(updatedGame.gameCode, updatedGame);
       }
     };
@@ -505,7 +681,7 @@ const GameTracker: React.FC<GameTrackerProps> = ({ user, onSignOut }) => {
     await saveMatchResult(matchResult);
     
     // Update game state
-    if (updatedGame.gameCode) {
+    if (updatedGame.gameCode && !isLocalMode) {
       console.log('Updating Firebase with surrender result');
       await updateFirebaseGame(updatedGame.gameCode, updatedGame);
     }
@@ -515,9 +691,57 @@ const GameTracker: React.FC<GameTrackerProps> = ({ user, onSignOut }) => {
     console.log('Surrender modal closed');
   };
 
-  const exitGame = () => {
-    const confirmed = window.confirm('Are you sure you want to exit the game?');
+  const exitGame = async () => {
+    const confirmed = window.confirm('Are you sure you want to exit the game? You can rejoin by entering the game code again.');
     if (confirmed) {
+      // Mark player as disconnected in game state
+      if (gameState?.gameCode) {
+        const updatedGame = { ...gameState };
+        if (updatedGame.players[userId]) {
+          updatedGame.players[userId].disconnected = true;
+          updatedGame.players[userId].lastDisconnect = new Date();
+        }
+
+        // Check if all players are disconnected
+        const allDisconnected = Object.values(updatedGame.players).every(
+          (player: any) => player.disconnected
+        );
+
+        if (allDisconnected && updatedGame.gameStatus === 'active') {
+          // End the game as incomplete if all players disconnect during active game
+          updatedGame.gameStatus = 'ended';
+          updatedGame.winner = 'incomplete';
+          updatedGame.incomplete = true;
+
+          // Save incomplete match result
+          const playerIds = Object.keys(updatedGame.players);
+          const matchResult: MatchResult = {
+            id: `${updatedGame.gameCode}_${Date.now()}`,
+            gameCode: updatedGame.gameCode,
+            players: {},
+            rounds: updatedGame.rounds,
+            winner: 'incomplete',
+            winType: 'incomplete' as any,
+            startedAt: updatedGame.startedAt!,
+            endedAt: new Date(),
+            incomplete: true
+          };
+
+          playerIds.forEach(id => {
+            matchResult.players[id] = {
+              name: updatedGame.players[id].name,
+              deckUsed: updatedGame.players[id].deckUsed
+            };
+          });
+
+          await saveMatchResult(matchResult);
+        }
+
+        if (!isLocalMode) {
+          await updateFirebaseGame(updatedGame.gameCode, updatedGame);
+        }
+      }
+
       // Clean up subscription
       if (gameSubscription) {
         gameSubscription();
@@ -525,6 +749,7 @@ const GameTracker: React.FC<GameTrackerProps> = ({ user, onSignOut }) => {
       }
       setGameState(null);
       setSelectedDeck(null);
+      setIsLocalMode(false);
     }
   };
 
@@ -567,12 +792,14 @@ const GameTracker: React.FC<GameTrackerProps> = ({ user, onSignOut }) => {
   // Show deck builder screen
   if (showDeckBuilder) {
     return (
-      <DeckBuilder 
+      <DeckBuilder
         onBack={() => {
           setShowDeckBuilder(false);
           setEditingDeck(null);
+          loadAvailableDecks(); // Reload decks after editing
         }}
         existingDeck={editingDeck}
+        userId={userId}
       />
     );
   }
@@ -610,22 +837,29 @@ const GameTracker: React.FC<GameTrackerProps> = ({ user, onSignOut }) => {
         <View style={styles.content}>
           <Text style={styles.welcome}>Welcome, {user.displayName}!</Text>
           
-          <TouchableOpacity 
-            style={styles.primaryButton} 
+          <TouchableOpacity
+            style={styles.primaryButton}
             onPress={() => setShowCreateGame(true)}
           >
-            <Text style={styles.primaryButtonText}>Create Game</Text>
+            <Text style={styles.primaryButtonText}>Create Online Game</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={styles.secondaryButton} 
+          <TouchableOpacity
+            style={styles.secondaryButton}
             onPress={() => setShowJoinGame(true)}
           >
             <Text style={styles.secondaryButtonText}>Join Game</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={styles.statisticsButton} 
+          <TouchableOpacity
+            style={styles.localGameButton}
+            onPress={() => setShowLocalGame(true)}
+          >
+            <Text style={styles.localGameButtonText}>Local 2-Player</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.statisticsButton}
             onPress={() => setShowStatistics(true)}
           >
             <Text style={styles.statisticsButtonText}>View Statistics</Text>
@@ -769,6 +1003,120 @@ const GameTracker: React.FC<GameTrackerProps> = ({ user, onSignOut }) => {
           </View>
         </Modal>
 
+        {/* Local 2-Player Modal */}
+        <Modal visible={showLocalGame} transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Local 2-Player Game</Text>
+              <Text style={styles.modalSubtitle}>Player 1: {user.displayName || user.email}</Text>
+
+              {/* Player 1 Deck Selection */}
+              <View style={styles.deckSelectionSection}>
+                <Text style={styles.deckSelectionTitle}>Player 1 Deck (Optional)</Text>
+                <ScrollView style={styles.deckList} showsVerticalScrollIndicator={false}>
+                  <TouchableOpacity
+                    style={[styles.deckOption, !selectedDeck && styles.selectedDeck]}
+                    onPress={() => setSelectedDeck(null)}
+                  >
+                    <Text style={styles.deckOptionText}>No Deck</Text>
+                  </TouchableOpacity>
+                  {availableDecks.map((deck) => (
+                    <TouchableOpacity
+                      key={deck.id}
+                      style={[styles.deckOption, selectedDeck?.id === deck.id && styles.selectedDeck]}
+                      onPress={() => setSelectedDeck(deck)}
+                    >
+                      <Text style={styles.deckOptionText}>{deck.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+
+              {/* Player 2 Login */}
+              <Text style={styles.modalSubtitle}>
+                {player2UserId ? 'Player 2: ✓ Authenticated' : 'Player 2: Enter login to save match to their account'}
+              </Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Player 2 Email (or any name for guest)"
+                value={player2Email}
+                onChangeText={setPlayer2Email}
+                autoCapitalize="none"
+                editable={!player2UserId}
+              />
+              {player2Email.trim() && player2Email.trim().toLowerCase() !== 'guest' && !player2UserId && (
+                <>
+                  <TextInput
+                    style={styles.modalInput}
+                    placeholder="Player 2 Password (optional)"
+                    value={player2Password}
+                    onChangeText={setPlayer2Password}
+                    secureTextEntry
+                  />
+                  {player2Password && (
+                    <TouchableOpacity
+                      style={styles.authenticateButton}
+                      onPress={authenticatePlayer2}
+                      disabled={isLoadingPlayer2}
+                    >
+                      <Text style={styles.authenticateButtonText}>
+                        {isLoadingPlayer2 ? 'Authenticating...' : 'Authenticate Player 2'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </>
+              )}
+
+              {/* Player 2 Deck Selection (if authenticated) */}
+              {player2Decks.length > 0 && (
+                <View style={styles.deckSelectionSection}>
+                  <Text style={styles.deckSelectionTitle}>Player 2 Deck (Optional)</Text>
+                  <ScrollView style={styles.deckList} showsVerticalScrollIndicator={false}>
+                    <TouchableOpacity
+                      style={[styles.deckOption, !player2Deck && styles.selectedDeck]}
+                      onPress={() => setPlayer2Deck(null)}
+                    >
+                      <Text style={styles.deckOptionText}>No Deck</Text>
+                    </TouchableOpacity>
+                    {player2Decks.map((deck) => (
+                      <TouchableOpacity
+                        key={deck.id}
+                        style={[styles.deckOption, player2Deck?.id === deck.id && styles.selectedDeck]}
+                        onPress={() => setPlayer2Deck(deck)}
+                      >
+                        <Text style={styles.deckOptionText}>{deck.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={styles.modalCancelButton}
+                  onPress={() => {
+                    setShowLocalGame(false);
+                    setPlayer2Email('');
+                    setPlayer2Password('');
+                    setPlayer2Deck(null);
+                    setPlayer2Decks([]);
+                    setPlayer2UserId(null);
+                    setSelectedDeck(null);
+                  }}
+                >
+                  <Text style={styles.modalCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.modalCreateButton}
+                  onPress={startLocalGame}
+                >
+                  <Text style={styles.modalCreateText}>Start Game</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
         <StatusBar style="auto" />
       </View>
     );
@@ -779,12 +1127,23 @@ const GameTracker: React.FC<GameTrackerProps> = ({ user, onSignOut }) => {
   const otherPlayerId = playerIds.find(id => id !== userId);
   const otherPlayer = otherPlayerId ? gameState.players[otherPlayerId] : null;
 
+  // If current player doesn't exist in game state, show loading or error
+  if (!currentPlayer) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.title}>Loading game...</Text>
+        <Text style={styles.subtitle}>Please wait</Text>
+      </View>
+    );
+  }
+
   // Game ended - show results screen
   if (gameState.gameStatus === 'ended') {
     const isWinner = gameState.winner === userId;
     const winnerName = gameState.players[gameState.winner!]?.name;
     const isSurrenderWin = gameState.rounds.some(r => r.endReason === 'surrender');
-    
+    const isIncomplete = gameState.winner === 'incomplete' || gameState.incomplete;
+
     return (
       <View style={styles.gameContainer}>
         <View style={styles.gameHeader}>
@@ -797,11 +1156,14 @@ const GameTracker: React.FC<GameTrackerProps> = ({ user, onSignOut }) => {
 
         <View style={styles.endGameContainer}>
           <Text style={styles.endGameTitle}>
-            {isWinner ? '🎉 Victory!' : '💔 Defeat'}
+            {isIncomplete ? '⚠️ Game Incomplete' : (isWinner ? '🎉 Victory!' : '💔 Defeat')}
           </Text>
-          
+
           <Text style={styles.endGameWinner}>
-            {winnerName} wins the match{isSurrenderWin ? ' by surrender!' : '!'}
+            {isIncomplete
+              ? 'All players disconnected. Game ended without completion.'
+              : `${winnerName} wins the match${isSurrenderWin ? ' by surrender!' : '!'}`
+            }
           </Text>
 
           <View style={styles.roundSummary}>
@@ -862,16 +1224,63 @@ const GameTracker: React.FC<GameTrackerProps> = ({ user, onSignOut }) => {
       {otherPlayer && (
         <View style={[styles.playerSection, styles.topPlayer]}>
           <Text style={styles.playerName}>
-            {otherPlayer.name} {gameState.priorityPlayerId === otherPlayerId ? '👑' : ''}
+            {otherPlayer.name} {gameState.priorityPlayerId === otherPlayerId ? '👑' : ''} {otherPlayer.disconnected ? '🔌' : ''}
           </Text>
+          {otherPlayer.disconnected && (
+            <Text style={styles.disconnectedLabel}>Disconnected</Text>
+          )}
           <View style={styles.statsContainer}>
             <View style={styles.statBox}>
               <Text style={styles.statLabel}>Morale</Text>
               <Text style={styles.statValue}>{otherPlayer.morale}</Text>
+              {isLocalMode && (
+                <View style={styles.buttonRow}>
+                  <TouchableOpacity
+                    style={styles.adjustButton}
+                    onPress={() => adjustValue(otherPlayerId!, 'morale', -1)}
+                  >
+                    <Text style={styles.adjustButtonText}>-1</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.adjustButton}
+                    onPress={() => adjustValue(otherPlayerId!, 'morale', 1)}
+                  >
+                    <Text style={styles.adjustButtonText}>+1</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.adjustButton}
+                    onPress={() => adjustValue(otherPlayerId!, 'morale', -5)}
+                  >
+                    <Text style={styles.adjustButtonText}>-5</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.adjustButton}
+                    onPress={() => adjustValue(otherPlayerId!, 'morale', 5)}
+                  >
+                    <Text style={styles.adjustButtonText}>+5</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
             <View style={styles.statBox}>
               <Text style={styles.statLabel}>Energy</Text>
               <Text style={styles.statValue}>{otherPlayer.energy}</Text>
+              {isLocalMode && (
+                <View style={styles.buttonRow}>
+                  <TouchableOpacity
+                    style={styles.adjustButton}
+                    onPress={() => adjustValue(otherPlayerId!, 'energy', -1)}
+                  >
+                    <Text style={styles.adjustButtonText}>-1</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.adjustButton}
+                    onPress={() => adjustValue(otherPlayerId!, 'energy', 1)}
+                  >
+                    <Text style={styles.adjustButtonText}>+1</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           </View>
         </View>
@@ -1079,6 +1488,37 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
+  localGameButton: {
+    backgroundColor: '#28a745',
+    paddingVertical: 15,
+    paddingHorizontal: 40,
+    borderRadius: 8,
+    marginTop: 15,
+    marginBottom: 15,
+    width: '100%',
+    maxWidth: 300,
+    minHeight: 48,
+  },
+  localGameButtonText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  authenticateButton: {
+    backgroundColor: '#007AFF',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    marginTop: 10,
+    marginBottom: 10,
+    alignItems: 'center',
+  },
+  authenticateButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   statisticsButton: {
     backgroundColor: '#28a745',
     paddingVertical: 15,
@@ -1277,6 +1717,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
     marginBottom: Math.max(8, Dimensions.get('window').height > 600 ? 15 : 10),
+  },
+  disconnectedLabel: {
+    color: '#ff9800',
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: -5,
+    marginBottom: 10,
+    fontStyle: 'italic',
   },
   upsideDown: {
     transform: [{ rotate: '180deg' }],

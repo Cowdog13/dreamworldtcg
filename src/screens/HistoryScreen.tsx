@@ -25,9 +25,10 @@ interface MatchResult {
   players: { [playerId: string]: { name: string; deckUsed?: string } };
   rounds: RoundResult[];
   winner: string;
-  winType: 'normal' | 'surrender';
+  winType: 'normal' | 'surrender' | 'incomplete';
   startedAt: Date;
   endedAt: Date;
+  incomplete?: boolean;
 }
 
 interface MatchStats {
@@ -38,6 +39,7 @@ interface MatchStats {
   surrenderWins: number;
   normalLosses: number;
   surrenderLosses: number;
+  incompleteGames: number;
   timesReduced0: number; // How many times player was reduced to 0 or below
   timesOpponentReduced0: number; // How many times opponent was reduced to 0 or below
   avgMoraleDifference: number;
@@ -80,46 +82,54 @@ const HistoryScreen = ({ currentUser }: HistoryScreenProps) => {
 
 
   const calculateStats = (userEmail: string, matchList: MatchResult[]): MatchStats => {
-    const userMatches = matchList.filter(match => 
+    const userMatches = matchList.filter(match =>
       Object.keys(match.players).includes(userEmail)
     );
 
     let wins = 0, losses = 0;
     let normalWins = 0, surrenderWins = 0;
     let normalLosses = 0, surrenderLosses = 0;
+    let incompleteGames = 0;
     let timesReduced0 = 0, timesOpponentReduced0 = 0;
     let totalMoraleDiff = 0;
 
     userMatches.forEach(match => {
-      const isWinner = match.winner === userEmail;
-      const isSurrender = match.winType === 'surrender';
-      
-      if (isWinner) {
-        wins++;
-        if (isSurrender) surrenderWins++;
-        else normalWins++;
+      const isIncomplete = match.winType === 'incomplete' || match.incomplete;
+
+      if (isIncomplete) {
+        incompleteGames++;
       } else {
-        losses++;
-        if (isSurrender) surrenderLosses++;
-        else normalLosses++;
+        const isWinner = match.winner === userEmail;
+        const isSurrender = match.winType === 'surrender';
+
+        if (isWinner) {
+          wins++;
+          if (isSurrender) surrenderWins++;
+          else normalWins++;
+        } else {
+          losses++;
+          if (isSurrender) surrenderLosses++;
+          else normalLosses++;
+        }
       }
 
       // Calculate morale statistics
       match.rounds.forEach(round => {
         const userMorale = round.playerMorale[userEmail] || 0;
-        const opponentMorale = Object.values(round.playerMorale).find(m => 
+        const opponentMorale = Object.values(round.playerMorale).find(m =>
           m !== userMorale
         ) || 0;
-        
+
         if (userMorale <= 0) timesReduced0++;
         if (opponentMorale <= 0) timesOpponentReduced0++;
-        
+
         totalMoraleDiff += Math.abs(userMorale - opponentMorale);
       });
     });
 
+    const completedGames = wins + losses;
     const totalGames = userMatches.length;
-    const winRate = totalGames > 0 ? (wins / totalGames) * 100 : 0;
+    const winRate = completedGames > 0 ? (wins / completedGames) * 100 : 0;
     const avgMoraleDifference = totalGames > 0 ? totalMoraleDiff / (totalGames * 2) : 0; // Div by 2 for avg per round
 
     return {
@@ -130,6 +140,7 @@ const HistoryScreen = ({ currentUser }: HistoryScreenProps) => {
       surrenderWins,
       normalLosses,
       surrenderLosses,
+      incompleteGames,
       timesReduced0,
       timesOpponentReduced0,
       avgMoraleDifference: Math.round(avgMoraleDifference),
@@ -153,12 +164,13 @@ const HistoryScreen = ({ currentUser }: HistoryScreenProps) => {
       const userInMatch = Object.keys(match.players).includes(userEmail);
       if (!userInMatch) return false;
 
+      const isIncomplete = match.winType === 'incomplete' || match.incomplete;
       const isWinner = match.winner === userEmail;
-      
-      // Filter by result
-      if (filterOptions.result === 'wins' && !isWinner) return false;
-      if (filterOptions.result === 'losses' && isWinner) return false;
-      
+
+      // Filter by result (incomplete games don't count as wins or losses)
+      if (filterOptions.result === 'wins' && (!isWinner || isIncomplete)) return false;
+      if (filterOptions.result === 'losses' && (isWinner || isIncomplete)) return false;
+
       // Filter by win type
       if (filterOptions.winType === 'normal' && match.winType !== 'normal') return false;
       if (filterOptions.winType === 'surrender' && match.winType !== 'surrender') return false;
@@ -198,20 +210,25 @@ const HistoryScreen = ({ currentUser }: HistoryScreenProps) => {
     const loadMatches = async () => {
       const allMatches = await getMatchHistory();
       setMatches(allMatches);
-      
+
       const filtered = applyFilters(allMatches, filters, currentUser);
       setFilteredMatches(filtered);
-      
-      const statistics = calculateStats(currentUser, allMatches);
+
+      // Calculate stats based on filtered matches
+      const statistics = calculateStats(currentUser, filtered);
       setStats(statistics);
     };
-    
+
     loadMatches();
   }, [currentUser]);
 
   useEffect(() => {
     const filtered = applyFilters(matches, filters, currentUser);
     setFilteredMatches(filtered);
+
+    // Recalculate stats whenever filters change
+    const statistics = calculateStats(currentUser, filtered);
+    setStats(statistics);
   }, [filters, matches, currentUser]);
 
   const formatDate = (date: Date) => {
@@ -222,30 +239,42 @@ const HistoryScreen = ({ currentUser }: HistoryScreenProps) => {
   };
 
   const renderMatch = ({ item }: { item: MatchResult }) => {
+    const isIncomplete = item.winType === 'incomplete' || item.incomplete;
     const isWinner = item.winner === currentUser;
     const opponentId = Object.keys(item.players).find(id => id !== currentUser);
     const opponentName = opponentId ? item.players[opponentId].name : 'Unknown';
-    
+
+    // Style for incomplete games
+    const cardStyle = isIncomplete
+      ? styles.incompleteCard
+      : (isWinner ? styles.winCard : styles.lossCard);
+
+    const resultColor = isIncomplete ? '#ff9800' : (isWinner ? '#28a745' : '#dc3545');
+    const resultText = isIncomplete ? '⚠️ Incomplete' : (isWinner ? '🎉 Victory' : '💔 Defeat');
+
     return (
-      <View style={[styles.matchCard, isWinner ? styles.winCard : styles.lossCard]}>
+      <View style={[styles.matchCard, cardStyle]}>
         <View style={styles.matchHeader}>
-          <Text style={[styles.matchResult, { color: isWinner ? '#28a745' : '#dc3545' }]}>
-            {isWinner ? '🎉 Victory' : '💔 Defeat'}
+          <Text style={[styles.matchResult, { color: resultColor }]}>
+            {resultText}
             {item.winType === 'surrender' && (
               <Text style={styles.surrenderText}> (Surrender)</Text>
+            )}
+            {isIncomplete && (
+              <Text style={styles.surrenderText}> (All disconnected)</Text>
             )}
           </Text>
           <Text style={styles.matchDate}>
             {formatDate(item.startedAt)}
           </Text>
         </View>
-        
+
         <Text style={styles.opponent}>vs {opponentName}</Text>
         <Text style={styles.gameCode}>Game: {item.gameCode}</Text>
         <Text style={styles.deckUsed}>
           Deck: {item.players[currentUser]?.deckUsed || 'No deck selected'}
         </Text>
-        
+
         <View style={styles.roundsContainer}>
           {item.rounds.map((round, index) => (
             <View key={index} style={styles.roundSummary}>
@@ -268,12 +297,25 @@ const HistoryScreen = ({ currentUser }: HistoryScreenProps) => {
     );
   }
 
+  // Check if any filters are active
+  const hasActiveFilters =
+    filters.result !== 'all' ||
+    filters.winType !== 'all' ||
+    filters.deck !== 'all' ||
+    filters.excludeDeck !== 'none' ||
+    filters.opponent.trim() !== '';
+
   return (
     <View style={styles.container}>
       {/* Statistics Summary */}
       <View style={styles.statsContainer}>
-        <Text style={styles.statsTitle}>Your Statistics</Text>
-        
+        <View style={styles.statsTitleContainer}>
+          <Text style={styles.statsTitle}>Your Statistics</Text>
+          {hasActiveFilters && (
+            <Text style={styles.filteredBadge}>Filtered</Text>
+          )}
+        </View>
+
         <View style={styles.statsGrid}>
           <View style={styles.statCard}>
             <Text style={styles.statValue}>{stats.totalGames}</Text>
@@ -299,6 +341,7 @@ const HistoryScreen = ({ currentUser }: HistoryScreenProps) => {
         <View style={styles.detailedStats}>
           <Text style={styles.detailStat}>Normal W/L: {stats.normalWins}/{stats.normalLosses}</Text>
           <Text style={styles.detailStat}>Surrender W/L: {stats.surrenderWins}/{stats.surrenderLosses}</Text>
+          <Text style={styles.detailStat}>Incomplete games: {stats.incompleteGames}</Text>
           <Text style={styles.detailStat}>Times reduced to 0: {stats.timesReduced0}</Text>
           <Text style={styles.detailStat}>Opponent reduced to 0: {stats.timesOpponentReduced0}</Text>
           <Text style={styles.detailStat}>Avg morale difference: {stats.avgMoraleDifference}</Text>
@@ -306,14 +349,30 @@ const HistoryScreen = ({ currentUser }: HistoryScreenProps) => {
       </View>
 
       {/* Filters */}
-      <TouchableOpacity 
-        style={styles.filterButton} 
-        onPress={() => setShowFilters(true)}
-      >
-        <Text style={styles.filterButtonText}>
-          Filters ({filteredMatches.length}/{matches.length} matches)
-        </Text>
-      </TouchableOpacity>
+      <View style={styles.filterButtonContainer}>
+        <TouchableOpacity
+          style={styles.filterButton}
+          onPress={() => setShowFilters(!showFilters)}
+        >
+          <Text style={styles.filterButtonText}>
+            {showFilters ? '✕ Hide Filters' : '⚙️ Filters'}
+          </Text>
+        </TouchableOpacity>
+        {hasActiveFilters && (
+          <TouchableOpacity
+            style={styles.clearFiltersButton}
+            onPress={() => setFilters({
+              result: 'all',
+              winType: 'all',
+              deck: 'all',
+              excludeDeck: 'none',
+              opponent: '',
+            })}
+          >
+            <Text style={styles.clearFiltersText}>Clear Filters</Text>
+          </TouchableOpacity>
+        )}
+      </View>
 
       {/* Match History */}
       <FlatList
@@ -550,12 +609,26 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
+  statsTitleContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 15,
+    gap: 10,
+  },
   statsTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 15,
     color: '#333',
+  },
+  filteredBadge: {
+    backgroundColor: '#007AFF',
+    color: 'white',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    fontSize: 12,
+    fontWeight: '600',
   },
   statsGrid: {
     flexDirection: 'row',
@@ -591,10 +664,15 @@ const styles = StyleSheet.create({
     color: '#666',
     marginBottom: 4,
   },
-  filterButton: {
-    backgroundColor: '#007AFF',
+  filterButtonContainer: {
+    flexDirection: 'row',
     marginHorizontal: 15,
     marginBottom: 10,
+    gap: 10,
+  },
+  filterButton: {
+    flex: 1,
+    backgroundColor: '#007AFF',
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 8,
@@ -603,6 +681,19 @@ const styles = StyleSheet.create({
   filterButtonText: {
     color: 'white',
     fontSize: 16,
+    fontWeight: '600',
+  },
+  clearFiltersButton: {
+    backgroundColor: '#dc3545',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clearFiltersText: {
+    color: 'white',
+    fontSize: 14,
     fontWeight: '600',
   },
   matchList: {
@@ -621,6 +712,10 @@ const styles = StyleSheet.create({
   },
   lossCard: {
     borderLeftColor: '#dc3545',
+  },
+  incompleteCard: {
+    borderLeftColor: '#ff9800',
+    opacity: 0.8,
   },
   matchHeader: {
     flexDirection: 'row',
