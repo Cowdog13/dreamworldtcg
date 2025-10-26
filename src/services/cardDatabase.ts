@@ -302,8 +302,8 @@ const parseCSVData = (csvText: string): Card[] => {
 // Initialize with CSV data
 export const initializeCardDatabase = async () => {
   try {
-    // Load CSV data
-    const response = await fetch('./CardList.csv');
+    // Load CSV data with cache-busting parameter
+    const response = await fetch(`./CardList.csv?v=${Date.now()}`);
     const csvText = await response.text();
     const parsedCards = parseCSVData(csvText);
     
