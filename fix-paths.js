@@ -16,4 +16,35 @@ fs.writeFileSync(indexPath, indexContent);
 const nojekyllPath = path.join(__dirname, 'dist', '.nojekyll');
 fs.writeFileSync(nojekyllPath, '');
 
+// Copy CardList.csv from public to dist
+const csvSourcePath = path.join(__dirname, 'public', 'CardList.csv');
+const csvDestPath = path.join(__dirname, 'dist', 'CardList.csv');
+if (fs.existsSync(csvSourcePath)) {
+  fs.copyFileSync(csvSourcePath, csvDestPath);
+  console.log('Copied CardList.csv from public to dist');
+} else {
+  console.warn('Warning: public/CardList.csv not found');
+}
+
+// Copy cards folder from public to dist
+const cardsSourcePath = path.join(__dirname, 'public', 'cards');
+const cardsDestPath = path.join(__dirname, 'dist', 'cards');
+if (fs.existsSync(cardsSourcePath)) {
+  // Create dist/cards directory if it doesn't exist
+  if (!fs.existsSync(cardsDestPath)) {
+    fs.mkdirSync(cardsDestPath, { recursive: true });
+  }
+  // Copy all files from public/cards to dist/cards
+  const cardFiles = fs.readdirSync(cardsSourcePath);
+  cardFiles.forEach(file => {
+    fs.copyFileSync(
+      path.join(cardsSourcePath, file),
+      path.join(cardsDestPath, file)
+    );
+  });
+  console.log(`Copied ${cardFiles.length} card images from public/cards to dist/cards`);
+} else {
+  console.warn('Warning: public/cards folder not found');
+}
+
 console.log('Fixed paths in index.html and added .nojekyll for GitHub Pages');
