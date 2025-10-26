@@ -302,8 +302,16 @@ const parseCSVData = (csvText: string): Card[] => {
 // Initialize with CSV data
 export const initializeCardDatabase = async () => {
   try {
-    // Load CSV data with cache-busting parameter
-    const response = await fetch(`./CardList.csv?v=${Date.now()}`);
+    // Load CSV data with cache-busting parameter using both timestamp and random number
+    const cacheBuster = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    const response = await fetch(`./CardList.csv?v=${cacheBuster}`, {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
     const csvText = await response.text();
     const parsedCards = parseCSVData(csvText);
     
